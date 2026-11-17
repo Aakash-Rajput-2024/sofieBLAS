@@ -108,6 +108,32 @@ static void runCpuTests() {
   refGemm(ref.data(), A, B, bias, M, N, K, 1.f, 1.f, false, false);
   checkClose(C, ref.data(), M * N, "cpu::gemm NN beta=1");
 
+  // --- gemm/gemmrelu with a bias vector of length M and beta=0, as SOFIE's
+  //     generated code calls them: only bias[0..M) may be read. The entries
+  //     after it are NaN, so reading the beta*bias[j*M+i] term would turn the
+  //     result into NaN even though beta is 0. ---
+  {
+    std::vector<float> biasVec(M * N, std::numeric_limits<float>::quiet_NaN());
+    for (int i = 0; i < M; ++i)
+      biasVec[i] = 0.5f * (i + 1);
+    std::vector<float> expected(M * N, 0.f);
+    refMatmul(expected.data(), A, B, M, N, K, 1.f, 0.f, false, false);
+    for (int j = 0; j < N; ++j)
+      for (int i = 0; i < M; ++i)
+        expected[j * M + i] += biasVec[i];
+
+    fillVal(C, M * N, 0.f);
+    blas.gemm('N', 'N', M, N, K, 1.f, static_cast<const float *>(A),
+              static_cast<const float *>(B), 0.f, biasVec.data(), C);
+    checkClose(C, expected.data(), M * N, "cpu::gemm bias vector beta=0");
+
+    fillVal(C, M * N, 0.f);
+    blas.gemmrelu('N', 'N', M, N, K, 1.f, static_cast<const float *>(A),
+                  static_cast<const float *>(B), 0.f, biasVec.data(), C);
+    checkClose(C, expected.data(), M * N,
+               "cpu::gemmrelu bias vector beta=0"); // all positive here
+  }
+
   // --- gemm TN ---
   {
     auto hAt = alpaka::allocBuf<float, Idx>(dev, static_cast<Idx>(K * M));
