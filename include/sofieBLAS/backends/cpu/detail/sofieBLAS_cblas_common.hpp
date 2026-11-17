@@ -635,6 +635,19 @@ public:
     }
   }
 
+  // Batched multiply without epilogue, C_b = alpha * op(A_b) * op(B_b) +
+  // beta * C_b, as in the GPU backends (which call cublas/hipblas
+  // sgemmStridedBatched for it).
+  inline void gemmStridedBatched(char transa, char transb, int m, int n, int k,
+                                 float alpha, const float *A, int lda,
+                                 long long strideA, const float *B, int ldb,
+                                 long long strideB, float beta, float *C,
+                                 int ldc, long long strideC, int batchCount) {
+    gemmStridedBatched(transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb,
+                       strideB, beta, C, ldc, strideC, batchCount,
+                       Epilogue::Default, nullptr);
+  }
+
 private:
   bool quantization = false;
 

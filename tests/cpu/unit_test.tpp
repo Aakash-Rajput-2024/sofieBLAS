@@ -351,6 +351,29 @@ static void runCpuTests() {
       }
   }
 
+  // --- batched multiply without epilogue (the overload generated code calls):
+  //     per-batch A, B shared between the batches (stride 0), beta accumulation ---
+  {
+    constexpr int BATCH = 3;
+    std::vector<float> Ab(M * K * BATCH), Bs(K * N);
+    fillSeq(Ab.data(), static_cast<int>(Ab.size()), -1.f, 0.25f);
+    fillSeq(Bs.data(), static_cast<int>(Bs.size()), 0.5f, -0.1f);
+    std::vector<float> actual(M * N * BATCH), expected(M * N * BATCH);
+    fillSeq(actual.data(), static_cast<int>(actual.size()), 1.f, 0.5f);
+    for (int b = 0; b < BATCH; ++b) {
+      std::vector<float> prod(M * N, 0.f);
+      refMatmul(prod.data(), Ab.data() + b * M * K, Bs.data(), M, N, K, 1.f,
+                0.f, false, false);
+      for (int i = 0; i < M * N; ++i)
+        expected[b * M * N + i] = 2.f * prod[i] + 0.5f * actual[b * M * N + i];
+    }
+    blas.gemmStridedBatched('N', 'N', M, N, K, 2.f, Ab.data(), M, M * K,
+                            Bs.data(), K, 0, 0.5f, actual.data(), M, M * N,
+                            BATCH);
+    checkClose(actual.data(), expected.data(), M * N * BATCH,
+               "cpu::gemmStridedBatched no epilogue, beta=0.5");
+  }
+
   // --- edge: identity-like (square, known result) ---
   {
     constexpr int S = 3;
